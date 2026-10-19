@@ -1,0 +1,41 @@
+name: Publish Mac release
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/release.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch and verify original release
+        env:
+          ORIGIN: https://youzi-desktop-pup.stillant1.chatgpt.site/downloads/
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,subprocess
+          from pathlib import Path
+          base=os.environ['ORIGIN']
+          m=json.loads(subprocess.check_output(['curl','--retry','3','-fsS',base+'release.json']))
+          local=json.loads(Path('downloads/release.json').read_text())
+          assert m['sha256']==local['sha256'] and m['size']==local['size']
+          h=hashlib.sha256()
+          with open(local['filename'],'wb') as f:
+              for part in m['parts']:
+                  data=subprocess.check_output(['curl','--retry','3','-fsS',base+part])
+                  f.write(data);h.update(data)
+          assert h.hexdigest()==local['sha256']
+          assert Path(local['filename']).stat().st_size==local['size']
+          PY
+      - name: Publish verified installation archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v0.1.0 >/dev/null 2>&1; then
+            echo 'Release already exists; preserving existing assets.'
+          else
+            gh release create v0.1.0 youzi-0.1.0-mac-arm64.zip downloads/SHA256.txt --title '柚子桌宠 0.1.0 · Mac 免费体验版' --notes '支持 Apple 芯片 Mac 和 macOS 14 或更新系统。下载 ZIP 后解压，将应用拖入应用程序。体验版尚未经过 Apple 公证，系统可能拦截首次打开。AI 聊天可选，需自备 DeepSeek API key，接口费用另计。'
+          fi
